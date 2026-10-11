@@ -18,14 +18,61 @@ void main() {
       expect(first, isNot(second));
       expect(
         first,
-        matches(RegExp(
-          r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-        )),
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+          ),
+        ),
       );
     });
   });
 
   group('HistorySyncMerger', () {
+    test('keeps the road name across watch-state sync', () {
+      final history = History(
+        _item(1),
+        12,
+        'plugin',
+        DateTime.fromMillisecondsSinceEpoch(1000),
+        'https://example.com/video',
+        '空岛篇',
+        lastRoadName: '线路A',
+      );
+      history.progresses[12] = Progress(12, 1, 95000, updatedAtMs: 1000);
+
+      final merged = HistorySyncMerger.merge(
+        snapshot: HistorySyncSnapshot.empty(),
+        events: [
+          HistorySyncEvent.upsertProgress(
+            deviceId: 'device-a',
+            seq: 1,
+            history: history,
+            episode: 12,
+            road: 1,
+            progressMs: 95000,
+            updatedAt: 1000,
+          ),
+          HistorySyncEvent.upsertWatchState(
+            deviceId: 'device-a',
+            seq: 2,
+            history: history,
+            episode: 12,
+            updatedAt: 1000,
+          ),
+        ],
+      );
+
+      final synced = merged.histories.single;
+      expect(synced.lastRoadName, '线路A');
+      expect(synced.lastWatchEpisode, 12);
+      expect(synced.timelinePlaybackSummary(), '第 12 集 · 线路A · 看到 1:35');
+
+      final json = HistorySyncCodec.historyToJson(synced);
+      expect(HistorySyncCodec.historyFromJson(json).lastRoadName, '线路A');
+      json.remove('lastRoadName');
+      expect(HistorySyncCodec.historyFromJson(json).lastRoadName, isEmpty);
+    });
+
     test('merges progress per episode instead of replacing whole history', () {
       final merged = HistorySyncMerger.merge(
         snapshot: HistorySyncSnapshot.empty(),
@@ -132,37 +179,39 @@ void main() {
       expect(merged.deletedVersions, isEmpty);
     });
 
-    test('legacy delete tombstone blocks older online upserts from snapshot',
-        () {
-      final legacyKey = History.legacyKey('plugin', _item(1));
-      final deleteVersion = HistorySyncVersion.of(
-        updatedAt: 2000,
-        eventId: 'legacy-delete',
-      );
-      final snapshot = HistorySyncSnapshot.fromJson({
-        'generatedAt': 2000,
-        'histories': [],
-        'itemVersions': {},
-        'progressVersions': {},
-        'deletedVersions': {legacyKey: deleteVersion},
-      });
+    test(
+      'legacy delete tombstone blocks older online upserts from snapshot',
+      () {
+        final legacyKey = History.legacyKey('plugin', _item(1));
+        final deleteVersion = HistorySyncVersion.of(
+          updatedAt: 2000,
+          eventId: 'legacy-delete',
+        );
+        final snapshot = HistorySyncSnapshot.fromJson({
+          'generatedAt': 2000,
+          'histories': [],
+          'itemVersions': {},
+          'progressVersions': {},
+          'deletedVersions': {legacyKey: deleteVersion},
+        });
 
-      final merged = HistorySyncMerger.merge(
-        snapshot: snapshot,
-        events: [
-          _legacyUpsert(
-            deviceId: 'device-a',
-            seq: 1,
-            updatedAt: 1500,
-            episode: 1,
-            progressMs: 10,
-          ),
-        ],
-      );
+        final merged = HistorySyncMerger.merge(
+          snapshot: snapshot,
+          events: [
+            _legacyUpsert(
+              deviceId: 'device-a',
+              seq: 1,
+              updatedAt: 1500,
+              episode: 1,
+              progressMs: 10,
+            ),
+          ],
+        );
 
-      expect(merged.histories, isEmpty);
-      expect(merged.deletedVersions, containsPair(legacyKey, deleteVersion));
-    });
+        expect(merged.histories, isEmpty);
+        expect(merged.deletedVersions, containsPair(legacyKey, deleteVersion));
+      },
+    );
 
     test('newer online upsert clears legacy delete tombstone', () {
       final legacyKey = History.legacyKey('plugin', _item(1));
@@ -230,58 +279,62 @@ void main() {
       expect(merged.deletedVersions, containsPair(legacyKey, deleteVersion));
     });
 
-    test('legacy tombstone is not canonicalized onto offline snapshot history',
-        () {
-      final offlineHistory = History(
-        _item(1),
-        1,
-        'plugin',
-        DateTime.fromMillisecondsSinceEpoch(1000),
-        '',
-        'EP1',
-        entryKind: HistoryEntryKind.offline,
-        episodePageUrl: '/offline/1',
-      );
-      final legacyKey = History.legacyKey('plugin', _item(1));
-      final offlineKey = History.getKey(
-        'plugin',
-        _item(1),
-        entryKind: HistoryEntryKind.offline,
-      );
-      final deleteVersion = HistorySyncVersion.of(
-        updatedAt: 2000,
-        eventId: 'legacy-delete',
-      );
-      final snapshot = HistorySyncSnapshot.fromJson({
-        'generatedAt': 2000,
-        'histories': [HistorySyncCodec.historyToJson(offlineHistory)],
-        'itemVersions': {},
-        'progressVersions': {},
-        'deletedVersions': {legacyKey: deleteVersion},
-      });
+    test(
+      'legacy tombstone is not canonicalized onto offline snapshot history',
+      () {
+        final offlineHistory = History(
+          _item(1),
+          1,
+          'plugin',
+          DateTime.fromMillisecondsSinceEpoch(1000),
+          '',
+          'EP1',
+          entryKind: HistoryEntryKind.offline,
+          episodePageUrl: '/offline/1',
+        );
+        final legacyKey = History.legacyKey('plugin', _item(1));
+        final offlineKey = History.getKey(
+          'plugin',
+          _item(1),
+          entryKind: HistoryEntryKind.offline,
+        );
+        final deleteVersion = HistorySyncVersion.of(
+          updatedAt: 2000,
+          eventId: 'legacy-delete',
+        );
+        final snapshot = HistorySyncSnapshot.fromJson({
+          'generatedAt': 2000,
+          'histories': [HistorySyncCodec.historyToJson(offlineHistory)],
+          'itemVersions': {},
+          'progressVersions': {},
+          'deletedVersions': {legacyKey: deleteVersion},
+        });
 
-      final merged = HistorySyncMerger.merge(
-        snapshot: snapshot,
-        events: [
-          _upsert(
-            deviceId: 'device-a',
-            seq: 1,
-            updatedAt: 1500,
-            episode: 1,
-            progressMs: 10,
-            entryKind: HistoryEntryKind.offline,
-            episodePageUrl: '/offline/1',
-          ),
-        ],
-      );
+        final merged = HistorySyncMerger.merge(
+          snapshot: snapshot,
+          events: [
+            _upsert(
+              deviceId: 'device-a',
+              seq: 1,
+              updatedAt: 1500,
+              episode: 1,
+              progressMs: 10,
+              entryKind: HistoryEntryKind.offline,
+              episodePageUrl: '/offline/1',
+            ),
+          ],
+        );
 
-      expect(merged.histories, hasLength(1));
-      expect(merged.histories.single.key, offlineKey);
-      expect(
-          merged.histories.single.progresses[1]!.progress.inMilliseconds, 10);
-      expect(merged.deletedVersions, containsPair(legacyKey, deleteVersion));
-      expect(merged.deletedVersions.containsKey(offlineKey), isFalse);
-    });
+        expect(merged.histories, hasLength(1));
+        expect(merged.histories.single.key, offlineKey);
+        expect(
+          merged.histories.single.progresses[1]!.progress.inMilliseconds,
+          10,
+        );
+        expect(merged.deletedVersions, containsPair(legacyKey, deleteVersion));
+        expect(merged.deletedVersions.containsKey(offlineKey), isFalse);
+      },
+    );
 
     test('legacy delete event does not delete an existing offline history', () {
       final offlineHistory = History(
@@ -347,7 +400,9 @@ void main() {
       );
 
       expect(
-          merged.histories.single.progresses[1]!.progress.inMilliseconds, 20);
+        merged.histories.single.progresses[1]!.progress.inMilliseconds,
+        20,
+      );
     });
 
     test('preserves playback entry metadata when merging progress', () {
@@ -406,11 +461,7 @@ void main() {
       expect(online.key, History.getKey('plugin', _item(1)));
       expect(
         offline.key,
-        History.getKey(
-          'plugin',
-          _item(1),
-          entryKind: HistoryEntryKind.offline,
-        ),
+        History.getKey('plugin', _item(1), entryKind: HistoryEntryKind.offline),
       );
       expect(online.progresses[1]!.progress.inSeconds, 10);
       expect(offline.progresses[1]!.progress.inSeconds, 20);
@@ -425,12 +476,7 @@ void main() {
         'https://example.com/video',
         'EP1',
       );
-      history.progresses[1] = Progress(
-        1,
-        0,
-        10 * 1000,
-        updatedAtMs: 1500,
-      );
+      history.progresses[1] = Progress(1, 0, 10 * 1000, updatedAtMs: 1500);
       final legacyKey = History.legacyKey('plugin', _item(1));
       final scopedKey = History.getKey('plugin', _item(1));
       final legacyVersion = HistorySyncVersion.of(
@@ -465,41 +511,43 @@ void main() {
       expect(merged.progressVersions.containsKey(legacyKey), isFalse);
     });
 
-    test('keeps watch state when local-state progress events share a timestamp',
-        () {
-      final history = History(
-        _item(1),
-        11,
-        'plugin',
-        DateTime.fromMillisecondsSinceEpoch(1000),
-        'https://example.com/video',
-        'EP11',
-      );
-      history.progresses[6] = Progress(6, 0, 6 * 1000);
-      history.progresses[11] = Progress(11, 0, 11 * 1000);
+    test(
+      'keeps watch state when local-state progress events share a timestamp',
+      () {
+        final history = History(
+          _item(1),
+          11,
+          'plugin',
+          DateTime.fromMillisecondsSinceEpoch(1000),
+          'https://example.com/video',
+          'EP11',
+        );
+        history.progresses[6] = Progress(6, 0, 6 * 1000);
+        history.progresses[11] = Progress(11, 0, 11 * 1000);
 
-      final merged = HistorySyncMerger.merge(
-        snapshot: HistorySyncSnapshot.fromHistories([history]),
-        events: [
-          _localStateUpsert(
-            history: history,
-            episode: 11,
-            progressMs: 11 * 1000,
-          ),
-          _localStateUpsert(
-            history: history,
-            episode: 6,
-            progressMs: 6 * 1000,
-          ),
-        ],
-      );
+        final merged = HistorySyncMerger.merge(
+          snapshot: HistorySyncSnapshot.fromHistories([history]),
+          events: [
+            _localStateUpsert(
+              history: history,
+              episode: 11,
+              progressMs: 11 * 1000,
+            ),
+            _localStateUpsert(
+              history: history,
+              episode: 6,
+              progressMs: 6 * 1000,
+            ),
+          ],
+        );
 
-      final mergedHistory = merged.histories.single;
-      expect(mergedHistory.lastWatchEpisode, 11);
-      expect(mergedHistory.lastWatchEpisodeName, 'EP11');
-      expect(mergedHistory.progresses[6]!.progress.inSeconds, 6);
-      expect(mergedHistory.progresses[11]!.progress.inSeconds, 11);
-    });
+        final mergedHistory = merged.histories.single;
+        expect(mergedHistory.lastWatchEpisode, 11);
+        expect(mergedHistory.lastWatchEpisodeName, 'EP11');
+        expect(mergedHistory.progresses[6]!.progress.inSeconds, 6);
+        expect(mergedHistory.progresses[11]!.progress.inSeconds, 11);
+      },
+    );
 
     test('upsertProgress does not replace the latest watch state', () {
       final history = History(
@@ -716,12 +764,7 @@ void main() {
           episode: 1,
           progressMs: 10,
         ),
-        _watchState(
-          deviceId: 'device-a',
-          seq: 2,
-          updatedAt: 1000,
-          episode: 1,
-        ),
+        _watchState(deviceId: 'device-a', seq: 2, updatedAt: 1000, episode: 1),
         HistorySyncEvent.clearAll(
           deviceId: 'device-a',
           seq: 3,
@@ -732,8 +775,11 @@ void main() {
       final lines = HistorySyncCodec.eventsToJsonLines(events);
       final restored = HistorySyncCodec.eventsFromJsonLines(lines);
 
-      expect(restored.map((event) => event.eventId),
-          ['device-a:1', 'device-a:2', 'device-a:3']);
+      expect(restored.map((event) => event.eventId), [
+        'device-a:1',
+        'device-a:2',
+        'device-a:3',
+      ]);
       expect(restored.map((event) => event.op), [
         HistorySyncOp.upsertProgress,
         HistorySyncOp.upsertWatchState,
@@ -755,15 +801,11 @@ void main() {
         entryKind: HistoryEntryKind.offline,
         episodePageUrl: '/offline/1',
       );
-      history.progresses[1] = Progress(
-        1,
-        2,
-        20 * 1000,
-        updatedAtMs: 2500,
-      );
+      history.progresses[1] = Progress(1, 2, 20 * 1000, updatedAtMs: 2500);
 
-      final events =
-          HistorySyncService.buildStateEventsFromHistories([history]);
+      final events = HistorySyncService.buildStateEventsFromHistories([
+        history,
+      ]);
 
       expect(events, hasLength(2));
       final progressEvent = events.singleWhere(
@@ -783,8 +825,9 @@ void main() {
     });
 
     test('streams a large event file into bounded history state', () async {
-      final directory =
-          await Directory.systemTemp.createTemp('kazumi_history_stream_');
+      final directory = await Directory.systemTemp.createTemp(
+        'kazumi_history_stream_',
+      );
       addTearDown(() async {
         if (await directory.exists()) {
           await directory.delete(recursive: true);
@@ -823,8 +866,9 @@ void main() {
     });
 
     test('fails closed and preserves malformed event files', () async {
-      final directory =
-          await Directory.systemTemp.createTemp('kazumi_history_invalid_');
+      final directory = await Directory.systemTemp.createTemp(
+        'kazumi_history_invalid_',
+      );
       addTearDown(() async {
         if (await directory.exists()) {
           await directory.delete(recursive: true);
@@ -846,8 +890,9 @@ void main() {
     });
 
     test('salvages valid lines from a corrupted local event log', () async {
-      final directory =
-          await Directory.systemTemp.createTemp('kazumi_history_salvage_');
+      final directory = await Directory.systemTemp.createTemp(
+        'kazumi_history_salvage_',
+      );
       addTearDown(() async {
         if (await directory.exists()) {
           await directory.delete(recursive: true);
@@ -890,8 +935,9 @@ void main() {
     });
 
     test('upload copy drops malformed lines but keeps valid events', () async {
-      final directory =
-          await Directory.systemTemp.createTemp('kazumi_history_upload_');
+      final directory = await Directory.systemTemp.createTemp(
+        'kazumi_history_upload_',
+      );
       addTearDown(() async {
         if (await directory.exists()) {
           await directory.delete(recursive: true);
@@ -937,8 +983,10 @@ void main() {
       // instead of being re-skipped on every following sync.
       final repairedContent = await activeFile.readAsString();
       expect(repairedContent, isNot(contains('truncated')));
-      expect(HistorySyncCodec.eventsFromJsonLines(repairedContent),
-          hasLength(2));
+      expect(
+        HistorySyncCodec.eventsFromJsonLines(repairedContent),
+        hasLength(2),
+      );
     });
 
     test('upload copy returns null when log has no valid events', () async {
@@ -1017,8 +1065,9 @@ void main() {
     });
 
     test('checkpoint keeps events appended during an active sync', () async {
-      final directory =
-          await Directory.systemTemp.createTemp('kazumi_history_checkpoint_');
+      final directory = await Directory.systemTemp.createTemp(
+        'kazumi_history_checkpoint_',
+      );
       addTearDown(() async {
         if (await directory.exists()) {
           await directory.delete(recursive: true);
@@ -1061,8 +1110,9 @@ void main() {
     });
 
     test('recovers pending logs left by an interrupted checkpoint', () async {
-      final directory =
-          await Directory.systemTemp.createTemp('kazumi_history_recovery_');
+      final directory = await Directory.systemTemp.createTemp(
+        'kazumi_history_recovery_',
+      );
       addTearDown(() async {
         if (await directory.exists()) {
           await directory.delete(recursive: true);
@@ -1117,10 +1167,11 @@ void main() {
 Map<String, dynamic> _canonicalSnapshot(HistorySyncSnapshot snapshot) {
   final json = snapshot.toJson();
   json.remove('generatedAt');
-  final histories = (json['histories'] as List)
-      .map((item) => Map<String, dynamic>.from(item as Map))
-      .toList()
-    ..sort((a, b) => jsonEncode(a).compareTo(jsonEncode(b)));
+  final histories =
+      (json['histories'] as List)
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList()
+        ..sort((a, b) => jsonEncode(a).compareTo(jsonEncode(b)));
   json['histories'] = histories;
   return json;
 }

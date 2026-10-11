@@ -46,6 +46,19 @@ abstract class _HistoryController with Store {
     );
   }
 
+  History? latestHistoryForBangumi(int bangumiId) {
+    return _historyRepository.latestHistoryForBangumi(bangumiId);
+  }
+
+  /// Newest history for each bangumi. The repository list is already newest first.
+  Map<int, History> latestHistoriesByBangumi() {
+    final byId = <int, History>{};
+    for (final history in _historyRepository.getAllHistories()) {
+      byId.putIfAbsent(history.bangumiItem.id, () => history);
+    }
+    return byId;
+  }
+
   Progress? findProgress(
     BangumiItem bangumiItem,
     String adapterName,
