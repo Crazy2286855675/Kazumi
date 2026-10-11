@@ -49,6 +49,36 @@ void main() {
     );
   });
 
+  test('numeric search matches the displayed episode number', () {
+    final reversed = List.generate(1180, (index) => '${1180 - index}');
+
+    expect(
+      EpisodeSearch.visibleEpisodes(
+        query: '302',
+        count: reversed.length,
+        identifiers: reversed,
+      ),
+      [879],
+    );
+    expect(reversed[878], '302');
+    expect(
+      EpisodeSearch.visibleEpisodes(
+        query: '879',
+        count: reversed.length,
+        identifiers: reversed,
+      ),
+      [302],
+    );
+    expect(
+      EpisodeSearch.visibleEpisodes(
+        query: '第302集',
+        count: reversed.length,
+        identifiers: reversed,
+      ),
+      [879],
+    );
+  });
+
   test('filters by title and returns every episode for an empty query', () {
     expect(
       EpisodeSearch.visibleEpisodes(
