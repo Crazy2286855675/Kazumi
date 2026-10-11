@@ -129,6 +129,49 @@ void main() {
     await tester.pump();
     expect(find.text('没有匹配的剧集'), findsOneWidget);
   });
+
+  testWidgets(
+    'numeric search follows the episode title when the list is reversed',
+    (tester) async {
+      const count = 1180;
+      final selected = <int>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: EpisodeSelectionPanel(
+              title: '航海王',
+              roads: [
+                Road(
+                  name: '播放线路1',
+                  data: List.generate(
+                    count,
+                    (index) => 'https://example/$index',
+                  ),
+                  identifier: List.generate(
+                    count,
+                    (index) => '${count - index}',
+                  ),
+                ),
+              ],
+              selectedRoad: 0,
+              selectedEpisode: 1,
+              downloads: const {},
+              onEpisodeSelected: (episode, road) => selected.add(episode),
+            ),
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField), '302');
+      await tester.pump();
+      expect(find.text('302'), findsWidgets);
+      expect(find.text('879'), findsNothing);
+
+      await tester.testTextInput.receiveAction(TextInputAction.go);
+      await tester.pump();
+      expect(selected, [879]);
+    },
+  );
 }
 
 BangumiItem _item(int id) {

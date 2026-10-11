@@ -9,11 +9,14 @@ class EpisodeSearch {
     return int.tryParse(match.group(1)!);
   }
 
-  /// 1-based episode numbers to show for [query].
+  static final _labelNumber = RegExp(r'^(?:第\s*)?0*(\d+)\s*(?:集|话|話)?$');
+
+  /// 1-based list positions to show for [query].
   ///
-  /// An empty query returns every episode. A numeric query returns that
-  /// episode when it exists, otherwise nothing. Any other query filters by
-  /// title, falling back to `第N集`.
+  /// An empty query returns every episode. A numeric query matches the
+  /// episode whose title is that number, so a reversed source list still
+  /// opens the episode the user typed. Lists titled without numbers fall
+  /// back to that list position. Any other query filters by title.
   static List<int> visibleEpisodes({
     required String query,
     required int count,
@@ -26,20 +29,34 @@ class EpisodeSearch {
     }
     final number = parseEpisodeNumber(trimmed);
     if (number != null) {
+      final labeled = <int>[];
+      for (var episode = 1; episode <= count; episode++) {
+        if (_labelEqualsEpisode(_labelFor(episode, identifiers), number)) {
+          labeled.add(episode);
+        }
+      }
+      if (labeled.isNotEmpty) return labeled;
       return number >= 1 && number <= count ? [number] : const [];
     }
     final needle = trimmed.toLowerCase();
     final matches = <int>[];
     for (var episode = 1; episode <= count; episode++) {
-      final index = episode - 1;
-      final title = index < identifiers.length ? identifiers[index].trim() : '';
-      final label = title.isEmpty ? '第$episode集' : title;
-      if (label.toLowerCase().contains(needle) ||
-          '第$episode集'.contains(trimmed)) {
-        matches.add(episode);
-      }
+      final label = _labelFor(episode, identifiers);
+      if (label.toLowerCase().contains(needle)) matches.add(episode);
     }
     return matches;
+  }
+
+  static String _labelFor(int episode, List<String> identifiers) {
+    final index = episode - 1;
+    final title = index < identifiers.length ? identifiers[index].trim() : '';
+    return title.isEmpty ? '第$episode集' : title;
+  }
+
+  static bool _labelEqualsEpisode(String label, int number) {
+    final match = _labelNumber.firstMatch(label.trim());
+    if (match == null) return false;
+    return int.tryParse(match.group(1)!) == number;
   }
 
   EpisodeSearch._();

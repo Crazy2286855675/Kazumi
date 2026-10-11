@@ -89,9 +89,13 @@ class EpisodeSelectionPanelState extends State<EpisodeSelectionPanel> {
   void _submitSearch(String value) {
     final road = _currentRoad;
     if (road == null) return;
-    final number = EpisodeSearch.parseEpisodeNumber(value);
-    if (number == null || number < 1 || number > road.data.length) return;
-    widget.onEpisodeSelected(number, _visibleRoad);
+    final matches = EpisodeSearch.visibleEpisodes(
+      query: value,
+      count: road.data.length,
+      identifiers: road.identifier,
+    );
+    if (matches.length != 1) return;
+    widget.onEpisodeSelected(matches.single, _visibleRoad);
   }
 
   Future<void> revealCurrentEpisode() async {
