@@ -24,6 +24,7 @@ class PlaybackHistoryIdentity {
     required this.entryKind,
     this.onlineBangumiSrc = '',
     this.episodePageUrl = '',
+    this.roadName = '',
   });
 
   final BangumiItem bangumiItem;
@@ -34,6 +35,7 @@ class PlaybackHistoryIdentity {
   final String entryKind;
   final String onlineBangumiSrc;
   final String episodePageUrl;
+  final String roadName;
 
   bool get canRecord => pluginName.isNotEmpty && episodeNumber > 0;
 
@@ -45,6 +47,7 @@ class PlaybackHistoryIdentity {
     required int road,
     required String onlineBangumiSrc,
     required String episodePageUrl,
+    String roadName = '',
   }) {
     return PlaybackHistoryIdentity(
       bangumiItem: bangumiItem,
@@ -55,6 +58,7 @@ class PlaybackHistoryIdentity {
       entryKind: HistoryEntryKind.online,
       onlineBangumiSrc: onlineBangumiSrc,
       episodePageUrl: episodePageUrl,
+      roadName: roadName,
     );
   }
 
@@ -65,6 +69,7 @@ class PlaybackHistoryIdentity {
     required String episodeTitle,
     required int road,
     required String episodePageUrl,
+    String roadName = '',
   }) {
     return PlaybackHistoryIdentity(
       bangumiItem: bangumiItem,
@@ -74,6 +79,7 @@ class PlaybackHistoryIdentity {
       road: road,
       entryKind: HistoryEntryKind.offline,
       episodePageUrl: episodePageUrl,
+      roadName: roadName,
     );
   }
 }
@@ -107,7 +113,27 @@ class History {
   @HiveField(8, defaultValue: '')
   String episodePageUrl;
 
+  @HiveField(9, defaultValue: '')
+  String lastRoadName;
+
   String get key => scopedKey(adapterName, bangumiItem, entryKind);
+
+  /// Road title when one was recorded; otherwise the plugin name.
+  String get playbackSourceName {
+    final road = lastRoadName.trim();
+    return road.isNotEmpty ? road : adapterName;
+  }
+
+  String timelinePlaybackSummary() {
+    final position = formatWatchPosition(
+      progresses[lastWatchEpisode]?.progress,
+    );
+    return [
+      '第 $lastWatchEpisode 集',
+      if (playbackSourceName.isNotEmpty) playbackSourceName,
+      if (position.isNotEmpty) '看到 $position',
+    ].join(' · ');
+  }
 
   History(
     this.bangumiItem,
@@ -118,6 +144,7 @@ class History {
     this.lastWatchEpisodeName, {
     this.entryKind = HistoryEntryKind.online,
     this.episodePageUrl = '',
+    this.lastRoadName = '',
   });
 
   static String legacyKey(String n, BangumiItem s) => n + s.id.toString();
@@ -173,4 +200,15 @@ class Progress {
   String toString() {
     return 'Episode ${episode.toString()}, progress $progress';
   }
+}
+
+/// `mm:ss`, or `h:mm:ss` once the position passes an hour. Empty at zero.
+String formatWatchPosition(Duration? progress) {
+  if (progress == null || progress.inSeconds <= 0) return '';
+  final seconds = (progress.inSeconds % 60).toString().padLeft(2, '0');
+  final minutes = (progress.inMinutes % 60).toString().padLeft(2, '0');
+  if (progress.inHours > 0) {
+    return '${progress.inHours}:$minutes:$seconds';
+  }
+  return '${progress.inMinutes}:$seconds';
 }

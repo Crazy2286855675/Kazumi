@@ -7,13 +7,14 @@ import 'package:kazumi/services/sync/history_sync_service.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/history_storage_coordinator.dart';
 
-typedef HistoryProgressSyncAppender = Future<void> Function({
-  required History history,
-  required int episode,
-  required int road,
-  required int progressMs,
-  required int updatedAt,
-});
+typedef HistoryProgressSyncAppender =
+    Future<void> Function({
+      required History history,
+      required int episode,
+      required int road,
+      required int progressMs,
+      required int updatedAt,
+    });
 
 typedef HistoryDeleteSyncAppender = Future<void> Function(History history);
 
@@ -88,6 +89,9 @@ abstract class IHistoryRepository {
 
   /// 获取隐私模式设置
   bool getPrivateMode();
+
+  /// 同一番剧跨插件、跨在线/缓存中最近的一条记录。
+  History? latestHistoryForBangumi(int bangumiId);
 }
 
 /// 历史记录数据访问实现类
@@ -100,12 +104,13 @@ class HistoryRepository implements IHistoryRepository {
     HistoryProgressSyncAppender? progressSyncAppender,
     HistoryDeleteSyncAppender? deleteSyncAppender,
     HistoryClearSyncAppender? clearSyncAppender,
-  })  : _historiesBox = historiesBox ?? GStorage.histories,
-        _privateModeReader = privateModeReader ??
-            (() => GStorage.getSetting(SettingsKeys.privateMode)),
-        _progressSyncAppender = progressSyncAppender ?? _appendProgressSync,
-        _deleteSyncAppender = deleteSyncAppender ?? _appendDeleteSync,
-        _clearSyncAppender = clearSyncAppender ?? _appendClearSync;
+  }) : _historiesBox = historiesBox ?? GStorage.histories,
+       _privateModeReader =
+           privateModeReader ??
+           (() => GStorage.getSetting(SettingsKeys.privateMode)),
+       _progressSyncAppender = progressSyncAppender ?? _appendProgressSync,
+       _deleteSyncAppender = deleteSyncAppender ?? _appendDeleteSync,
+       _clearSyncAppender = clearSyncAppender ?? _appendClearSync;
 
   final Box<History> _historiesBox;
   final bool Function() _privateModeReader;
@@ -228,14 +233,11 @@ class HistoryRepository implements IHistoryRepository {
         final legacyKey = History.legacyKey(adapterName, bangumiItem);
         final shouldMigrateLegacy =
             HistoryEntryKind.normalize(identity.entryKind) ==
-                HistoryEntryKind.online;
+            HistoryEntryKind.online;
 
         // 获取或创建历史记录
-        var history = _findHistory(
-              adapterName,
-              bangumiItem,
-              identity.entryKind,
-            ) ??
+        var history =
+            _findHistory(adapterName, bangumiItem, identity.entryKind) ??
             History(
               bangumiItem,
               episode,
@@ -259,6 +261,9 @@ class HistoryRepository implements IHistoryRepository {
         }
         if (identity.episodePageUrl.isNotEmpty) {
           history.episodePageUrl = identity.episodePageUrl;
+        }
+        if (identity.roadName.isNotEmpty) {
+          history.lastRoadName = identity.roadName;
         }
 
         // 更新观看进度
@@ -387,6 +392,14 @@ class HistoryRepository implements IHistoryRepository {
       );
       return false;
     }
+  }
+
+  @override
+  History? latestHistoryForBangumi(int bangumiId) {
+    for (final history in getAllHistories()) {
+      if (history.bangumiItem.id == bangumiId) return history;
+    }
+    return null;
   }
 
   History? _findHistory(

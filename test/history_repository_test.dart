@@ -91,64 +91,62 @@ void main() {
       expect(online.key, History.getKey('plugin', item));
       expect(
         offline.key,
-        History.getKey(
+        History.getKey('plugin', item, entryKind: HistoryEntryKind.offline),
+      );
+    });
+
+    test(
+      'does not overwrite existing online source with an empty value',
+      () async {
+        final repository = HistoryRepository(
+          historiesBox: historiesBox,
+          privateModeReader: () => privateMode,
+          progressSyncAppender: _noopHistorySync,
+          deleteSyncAppender: _noopDeleteSync,
+          clearSyncAppender: _noopClearSync,
+        );
+        final item = _item(2);
+
+        await repository.updateHistory(
+          identity: PlaybackHistoryIdentity.online(
+            bangumiItem: item,
+            pluginName: 'plugin',
+            episodeNumber: 1,
+            episodeTitle: 'EP1',
+            road: 0,
+            onlineBangumiSrc: 'https://example.com/source',
+            episodePageUrl: '/online/1',
+          ),
+          progress: const Duration(seconds: 10),
+        );
+
+        await repository.updateHistory(
+          identity: PlaybackHistoryIdentity.online(
+            bangumiItem: item,
+            pluginName: 'plugin',
+            episodeNumber: 2,
+            episodeTitle: 'EP2',
+            road: 1,
+            onlineBangumiSrc: '',
+            episodePageUrl: '/online/2',
+          ),
+          progress: const Duration(seconds: 30),
+        );
+
+        final history = repository.getHistory(
           'plugin',
           item,
-          entryKind: HistoryEntryKind.offline,
-        ),
-      );
-    });
+          entryKind: HistoryEntryKind.online,
+        );
 
-    test('does not overwrite existing online source with an empty value',
-        () async {
-      final repository = HistoryRepository(
-        historiesBox: historiesBox,
-        privateModeReader: () => privateMode,
-        progressSyncAppender: _noopHistorySync,
-        deleteSyncAppender: _noopDeleteSync,
-        clearSyncAppender: _noopClearSync,
-      );
-      final item = _item(2);
-
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '/online/1',
-        ),
-        progress: const Duration(seconds: 10),
-      );
-
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 2,
-          episodeTitle: 'EP2',
-          road: 1,
-          onlineBangumiSrc: '',
-          episodePageUrl: '/online/2',
-        ),
-        progress: const Duration(seconds: 30),
-      );
-
-      final history = repository.getHistory(
-        'plugin',
-        item,
-        entryKind: HistoryEntryKind.online,
-      );
-
-      expect(history, isNotNull);
-      expect(history!.lastSrc, 'https://example.com/source');
-      expect(history.lastWatchEpisode, 2);
-      expect(history.lastWatchEpisodeName, 'EP2');
-      expect(history.episodePageUrl, '/online/2');
-      expect(history.progresses[2]!.progress.inSeconds, 30);
-    });
+        expect(history, isNotNull);
+        expect(history!.lastSrc, 'https://example.com/source');
+        expect(history.lastWatchEpisode, 2);
+        expect(history.lastWatchEpisodeName, 'EP2');
+        expect(history.episodePageUrl, '/online/2');
+        expect(history.progresses[2]!.progress.inSeconds, 30);
+      },
+    );
 
     test('does not record history when private mode is enabled', () async {
       privateMode = true;
@@ -178,52 +176,54 @@ void main() {
       expect(repository.getHistory('plugin', item), isNull);
     });
 
-    test('stores zero progress when position is near the end of the video',
-        () async {
-      final repository = HistoryRepository(
-        historiesBox: historiesBox,
-        privateModeReader: () => privateMode,
-        progressSyncAppender: _noopHistorySync,
-        deleteSyncAppender: _noopDeleteSync,
-        clearSyncAppender: _noopClearSync,
-      );
-      final item = _item(5);
-      final identity = PlaybackHistoryIdentity.online(
-        bangumiItem: item,
-        pluginName: 'plugin',
-        episodeNumber: 1,
-        episodeTitle: 'EP1',
-        road: 0,
-        onlineBangumiSrc: 'https://example.com/source',
-        episodePageUrl: '/online/1',
-      );
+    test(
+      'stores zero progress when position is near the end of the video',
+      () async {
+        final repository = HistoryRepository(
+          historiesBox: historiesBox,
+          privateModeReader: () => privateMode,
+          progressSyncAppender: _noopHistorySync,
+          deleteSyncAppender: _noopDeleteSync,
+          clearSyncAppender: _noopClearSync,
+        );
+        final item = _item(5);
+        final identity = PlaybackHistoryIdentity.online(
+          bangumiItem: item,
+          pluginName: 'plugin',
+          episodeNumber: 1,
+          episodeTitle: 'EP1',
+          road: 0,
+          onlineBangumiSrc: 'https://example.com/source',
+          episodePageUrl: '/online/1',
+        );
 
-      await repository.updateHistory(
-        identity: identity,
-        progress: const Duration(minutes: 23, seconds: 57),
-        duration: const Duration(minutes: 24),
-      );
-      var history = repository.getHistory('plugin', item);
-      expect(history!.progresses[1]!.progress, Duration.zero);
+        await repository.updateHistory(
+          identity: identity,
+          progress: const Duration(minutes: 23, seconds: 57),
+          duration: const Duration(minutes: 24),
+        );
+        var history = repository.getHistory('plugin', item);
+        expect(history!.progresses[1]!.progress, Duration.zero);
 
-      await repository.updateHistory(
-        identity: identity,
-        progress: const Duration(minutes: 20),
-        duration: const Duration(minutes: 24),
-      );
-      history = repository.getHistory('plugin', item);
-      expect(history!.progresses[1]!.progress, const Duration(minutes: 20));
+        await repository.updateHistory(
+          identity: identity,
+          progress: const Duration(minutes: 20),
+          duration: const Duration(minutes: 24),
+        );
+        history = repository.getHistory('plugin', item);
+        expect(history!.progresses[1]!.progress, const Duration(minutes: 20));
 
-      await repository.updateHistory(
-        identity: identity,
-        progress: const Duration(minutes: 23, seconds: 57),
-      );
-      history = repository.getHistory('plugin', item);
-      expect(
-        history!.progresses[1]!.progress,
-        const Duration(minutes: 23, seconds: 57),
-      );
-    });
+        await repository.updateHistory(
+          identity: identity,
+          progress: const Duration(minutes: 23, seconds: 57),
+        );
+        history = repository.getHistory('plugin', item);
+        expect(
+          history!.progresses[1]!.progress,
+          const Duration(minutes: 23, seconds: 57),
+        );
+      },
+    );
 
     test('serializes repository writes with snapshot reconciliation', () async {
       final appendStarted = Completer<void>();
@@ -231,16 +231,17 @@ void main() {
       final repository = HistoryRepository(
         historiesBox: historiesBox,
         privateModeReader: () => privateMode,
-        progressSyncAppender: ({
-          required history,
-          required episode,
-          required road,
-          required progressMs,
-          required updatedAt,
-        }) async {
-          appendStarted.complete();
-          await allowAppendToFinish.future;
-        },
+        progressSyncAppender:
+            ({
+              required history,
+              required episode,
+              required road,
+              required progressMs,
+              required updatedAt,
+            }) async {
+              appendStarted.complete();
+              await allowAppendToFinish.future;
+            },
         deleteSyncAppender: _noopDeleteSync,
         clearSyncAppender: _noopClearSync,
       );
@@ -271,6 +272,85 @@ void main() {
       await update;
       await reconciliation;
       expect(reconciliationStarted, isTrue);
+    });
+
+    test('stores the road name and the newest history for a bangumi', () async {
+      final repository = HistoryRepository(
+        historiesBox: historiesBox,
+        privateModeReader: () => privateMode,
+        progressSyncAppender: _noopHistorySync,
+        deleteSyncAppender: _noopDeleteSync,
+        clearSyncAppender: _noopClearSync,
+      );
+      final item = _item(6);
+
+      await repository.updateHistory(
+        identity: PlaybackHistoryIdentity.online(
+          bangumiItem: item,
+          pluginName: 'plugin',
+          episodeNumber: 12,
+          episodeTitle: '空岛篇',
+          road: 1,
+          roadName: '线路A',
+          onlineBangumiSrc: 'https://example.com/source',
+          episodePageUrl: '/online/12',
+        ),
+        progress: const Duration(seconds: 95),
+      );
+      await repository.updateHistory(
+        identity: PlaybackHistoryIdentity.online(
+          bangumiItem: item,
+          pluginName: 'other',
+          episodeNumber: 3,
+          episodeTitle: '第三话',
+          road: 0,
+          roadName: '备用线路',
+          onlineBangumiSrc: 'https://example.com/other',
+          episodePageUrl: '/online/3',
+        ),
+        progress: const Duration(seconds: 5),
+      );
+
+      final stored = repository.getHistory('plugin', item);
+      expect(stored!.lastRoadName, '线路A');
+      expect(stored.lastWatchEpisode, 12);
+      expect(stored.playbackSourceName, '线路A');
+      expect(stored.timelinePlaybackSummary(), '第 12 集 · 线路A · 看到 1:35');
+
+      final latest = repository.latestHistoryForBangumi(item.id);
+      expect(latest!.adapterName, 'other');
+      expect(latest.lastWatchEpisode, 3);
+      expect(latest.lastRoadName, '备用线路');
+
+      final storedKey = stored.key;
+      await historiesBox.close();
+      historiesBox = await Hive.openBox<History>('histories');
+      final restored = historiesBox.get(storedKey);
+      expect(restored!.lastRoadName, '线路A');
+      expect(restored.lastWatchEpisode, 12);
+      expect(restored.progresses[12]!.progress.inSeconds, 95);
+
+      final reopened = HistoryRepository(
+        historiesBox: historiesBox,
+        privateModeReader: () => privateMode,
+        progressSyncAppender: _noopHistorySync,
+        deleteSyncAppender: _noopDeleteSync,
+        clearSyncAppender: _noopClearSync,
+      );
+      await reopened.updateHistory(
+        identity: PlaybackHistoryIdentity.online(
+          bangumiItem: item,
+          pluginName: 'plugin',
+          episodeNumber: 13,
+          episodeTitle: '下一话',
+          road: 1,
+          onlineBangumiSrc: 'https://example.com/source',
+          episodePageUrl: '/online/13',
+        ),
+        progress: const Duration(seconds: 8),
+      );
+      expect(reopened.getHistory('plugin', item)!.lastRoadName, '线路A');
+      expect(reopened.getHistory('plugin', item)!.lastWatchEpisode, 13);
     });
   });
 }
